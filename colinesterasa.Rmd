@@ -1,0 +1,414 @@
+---
+title: "Untitled"
+author: "Brayan Alonso Monge Blanco"
+date: '2022-05-19'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ 
+ + Librerias
+ 
+```{r}
+library(car)
+library(ggplot2)
+```
+ 
+ 
+  + Datos
+
+```{r}
+load("colinesterasa.Rdata")
+str(colinesterasa)
+```
+
+  + Acerca del experimento
+  
+  Tomar en cuenta que el diseño que se esta utilizando es factorial y es desbalanceado. En este caso el factor de diseño es el tipo de práctica en el suelo [ bosque (control), BPA, convencional y organico ], y queremos ver si hay un efecto del tipo de práctica en el suelo sobre la actividad colinestarasa en las lombrices. Seguidamente se quiere verificar si el efecto del tipo de práctica en el suelo sobre la actividad colinesterasa de las lombrices es el mismo independientemente de la estacion en la que se este (verano e invierno).
+
+  + Análisis de supuestos
+  
+  `1. Supuesto de independencia`
+  
+  En este caso, como los datos no se estan midiendo en el tiempo, no hay un efecto de aprendizaje o fatiga a lo largo del tiempo, por lo que se puede asumir independencia en las observaciones, ya que las respuestas de las unidades experimentales no se encuentran correlacionadas en un mismo tratamiento. 
+  
+  `2. Supuesto de homocedasticidad`
+  
+  Grafico para visualizar la variabilidad entre cada tratamiento incluyendo ambos factores(tipo de práctica en el suelo y estación).
+  
+```{r}
+media = mean(colinesterasa$ChE)
+boxplot(ChE ~ practica + estacion, data = colinesterasa)
+abline(h = media, col=2)
+```
+  
+  Se observa que la variabilidad para el tratamiento bosque-invierno, es considerablemente mayor a los demas tratamientos, por lo que esto puede ser una posible evidencia de heterocedasticidad.
+  
+  
+  *Prueba de hipótesis de homocedasticidad*
+  
+```{r}
+mod = lm(ChE ~ practica + estacion + practica*estacion, colinesterasa)
+bartlett.test(mod$residuals ~ interaction(colinesterasa$practica, colinesterasa$estacion))
+```
+  
+  Con una significancia del 5%, hay suficiente evidencia estadistica para rechazar la H0 de homocedasticidad. Es decir, no podemos asumir varianzas iguales entre los tratamientos.
+  
+  Solucion: *Minimos cuadrados ponderados*
+  
+  `3. Supuesto de normalidad`
+  
+  Ajuste del modelo (modelo lineal: tratamiento de referencia) y qqPlot
+  
+```{r}
+qqPlot(mod$res, ylab = "Residuales")
+```
+  
+  Al comparar los residuales con los cuantiles teóricos de una distribución normal, todos ellos se colocan muy cerca de una línea recta, esto indica que hay una proporcionalidad entre ellos, con lo cual se puede asumir que provengan de una distribución normal.
+
+
+  + Minimos cuadrados ponderados
+  
+  Las observaciones en los tratamientos con varianzas pequeñas dan informacion mas confiable sobre los efectos existentes en la respuesta que aquellas con varianzas grandes. Por lo que este metodo da un peso mayor a aquellad observaciones que provienen de tratamientos con menor varianza.
+  
+  Las estimaciones de los promedios no difieren entre los minimos cuadrados ponderados y no ponderados.
+  
+  Al utilizar este metodo no se logra homocedasticidad sino que se trabaja bajo condiciones de heterocedasticidad pero dando peso a las observaciones segun la variabilidad observada en cada tratamiento.
+  
+  *Proceso de estimacion*
+  
+  `1. Se calcula la varianza para cada tratamiento.`
+  `2. Se usan como ponderaciones los inversos de las varianzas de los tratamientos.`
+  
+```{r}
+v = tapply(colinesterasa$ChE, list(colinesterasa$practica, colinesterasa$estacion), var)
+w = 1/v
+
+# Se introduce el vector de pesos a la base de datos, para seguidamente usarlo en el modelo.
+
+vecw = c(rep(w[2,2], 13), rep(w[4,2], 13), rep(w[1,2], 5), rep(w[3,2], 5),rep(w[2,1], 13), rep(w[4,1], 8), rep(w[1,1], 11), rep(w[3,1], 11))
+colinesterasa$vec = vecw
+```
+  
+  
+  `3. Se ajusta el modelo usando estos pesos con el argumento weights = vecw. A partir de aca las estimaciones se haran con el el modelo lineal: suma nula, esto para efectos de interpretaciones.`
+  
+```{r}
+options(contrasts=c("contr.sum","contr.poly"))
+modw = lm(ChE ~ practica*estacion, colinesterasa, weights = vecw)
+```
+  
+  
+
+  + Inicio del análisis
+  
+  `1. Estimacion de la media general de actividad colinesterasa en lombrices`
+  
+```{r}
+media
+```
+  
+  La media general del nivel de actividad colinesterasa en lombrices es de 209.6706.
+  
+  `2. Estimacion de la varianza para cada tratamiento`
+  
+```{r}
+v
+```
+  
+  Grafico para ver la variabilidad entre cada estacion
+  
+```{r}
+boxplot(ChE ~ estacion, colinesterasa)
+abline(h = media, col=2)
+```
+  
+  *Comentar variabilidad entre cada estacion dado el tipo de practica que se da en el suelo.*
+  
+  `3. Analisis de interaccion entre el tipo de practica en el suelo y la estacion`
+
+  *Grafico*
+    
+```{r}
+ggplot(colinesterasa, aes(x = estacion, y = ChE, group = practica)) +
+  stat_summary(fun = "mean", geom = "line", aes(linetype = practica)) + #scale_color_manual()
+  theme_classic()
+```
+  
+   Se observa que la distancia entre la actividad colinesterasa cuando el tipo de practica en el suelo es BPA con respecto a la media cuando el tipo practica en el suelo es convencional en invierno es menor a la distancia que hay entre la media de las mismas practicas de uso de suelo antes mencionadas pero para verano. Esto es evidencia de una posible interaccion entre el tipo de practica en el suelo y la estacion.
+  
+  *Efectos simples y efectos de interaccion*
+  
+```{r}
+# A pie
+m1 = tapply(colinesterasa$ChE, colinesterasa$practica, mean)
+alpha1 = m1[1] - media 
+alpha2 = m1[2] - media 
+alpha3 = m1[3] - media 
+alpha4 = m1[4] - media 
+
+alpha = cbind(alpha1, alpha2, alpha3, alpha4)
+round(alpha, 3)
+
+m2 = tapply(colinesterasa$ChE, colinesterasa$estacion, mean)
+beta1 = m2[1] - media
+beta2 = m2[2] - media
+
+beta = cbind(beta1, beta2)
+round(beta, 3)
+
+mCI = tapply(colinesterasa$ChE, list(colinesterasa$practica, colinesterasa$estacion), mean)
+
+y11 = media + alpha[1] + beta[1]
+y21 = media + alpha[2] + beta[1]
+y31 = media + alpha[3] + beta[1]
+y41 = media + alpha[4] + beta[1]
+y12 = media + alpha[1] + beta[2]
+y22 = media + alpha[2] + beta[2]
+y32 = media + alpha[3] + beta[2]
+y42 = media + alpha[4] + beta[2]
+
+mSI = matrix(c(y11, y21, y31, y41, y12, y22, y32, y42), nrow = 4,
+                   dimnames = list(c("Bosque", "BPA", "Convencional", "Organico"),
+                                   c("invierno","verano")))
+
+promedios = cbind(as.vector(mCI), as.vector(mSI))
+colnames(promedios) = c("Observados", "Estimados")
+promedios
+
+efectint = mCI - mSI
+efectint
+```
+
+  *Falta comentar acerca de los efectos de interaccion*
+  
+##################################################################################################  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  *Prueba de hipotesis de no interaccion*
+  
+  $$H0:(\hat{\alpha\beta})_{ij}=0$$
+```{r}
+anova(modw)
+```
+  
+  Con una significancia del 5%, hay suficiente evidencia estadistica para rechazar la H0 de no interaccion. Es decir, no hay evidencia para asumir que el tipo de practica de uso en el suelo es independiente de la estacion por lo que la estimacion de los intervalos de confianza debe ser por el metodo de intervalos simultaneos de Bonferroni.
+  
+  
+  
+  
+  
+  
+  + Comparaciones multiples con varianzas diferentes
+  
+  Cuando se rechaza la hipotesis de igualdad de medias es importante construir intervalos de confianza.
+  
+  Se pueden construir intervalos de confianza pero en el calculo del error estandar no se debe usar el CMRes sino que *se debe respetar que las varianzas no se asumen iguales*.
+
+
+
+
+
+
+
+
+  
+ *Efectos simples y de interaccion*
+ 
+ $$(\hat{\alpha\beta})_{ij}=\hat{\mu}_{ij}^{CI}-\hat{\mu}_{ij}^{SI}$$
+ 
+```{r}
+# A pie
+m1 = tapply(colinesterasa$ChE, colinesterasa$practica, mean)
+alpha1 = m1[1] - media 
+alpha2 = m1[2] - media 
+alpha3 = m1[3] - media 
+alpha4 = m1[4] - media 
+
+alpha = cbind(alpha1, alpha2, alpha3, alpha4)
+round(alpha, 3)
+
+m2 = tapply(colinesterasa$ChE, colinesterasa$estacion, mean)
+beta1 = m2[1] - media
+beta2 = m2[2] - media
+
+beta = cbind(beta1, beta2)
+round(beta, 3)
+
+mCI = tapply(colinesterasa$ChE, list(colinesterasa$practica, colinesterasa$estacion), mean)
+
+y11 = media + alpha[1] + beta[1]
+y21 = media + alpha[2] + beta[1]
+y31 = media + alpha[3] + beta[1]
+y41 = media + alpha[4] + beta[1]
+y12 = media + alpha[1] + beta[2]
+y22 = media + alpha[2] + beta[2]
+y32 = media + alpha[3] + beta[2]
+y42 = media + alpha[4] + beta[2]
+
+mSI = matrix(c(y11, y21, y31, y41, y12, y22, y32, y42), nrow = 4,
+                   dimnames = list(c("Bosque", "BPA", "Convencional", "Organico"),
+                                   c("invierno","verano")))
+
+promedios = cbind(as.vector(mCI), as.vector(mSI))
+colnames(promedios) = c("Observados", "Estimados")
+promedios
+
+efectint = mCI - mSI
+efectint
+
+# Calculo automatico
+mod1 = aov(ChE ~ practica + estacion + practica*estacion, data = colinesterasa)
+model.tables(mod1)
+```
+
+  `Comentar efectos de interaccion con Ricardo`
+ 
+  *Ajuste del modelo para hipotesis de no interaccion*
+  
+  $$H0:(\alpha\beta)_{ij}$$
+  
+```{r}
+modint = lm(ChE ~ practica*estacion, colinesterasa, weights = vec) # Revisar
+anova(modint)
+```
+  
+  Con una significancia del 5%, no hay suficiente evidencia estadistica para rechazar la H0 de no interaccion, por lo que se puede asumir que el tipo de practica en el suelo es independiente de la estacion en la que se este.
+  
+  *Cambiarlo con los pesos, por que no esta ponderado.*
+  
+  *Comentar hipotesis de no interaccion con Ricardo*
+  
+  + Analisis sin tomar en cuenta la interaccion
+  
+  *Efectos simples de cada tipo de practica en el suelo y efectos simples de invierno*
+  
+```{r}
+modsin = lm(ChE ~ practica + estacion, colinesterasa)
+contrasts(colinesterasa$practica)
+contrasts(colinesterasa$estacion)
+round(modsin$coefficients, 3)
+```
+  
+  $$\alpha_i=tipo\space practica\space en\space el\space suelo$$
+  
+  Cuando el tipo de practica de en el suelo es BPA, el nivel de actividad colinesterasa sube 68.406 unidades con respecto al promedio general de actividad colinesterasa, mientras que cuando el tipo de practica de uso en el suelo es convencional, baja el promedio de actividad colinesterasa en 111.108 unidades con respecto al promedio general de actividad colinesterasa. *Se toma en cuenta BPA por que es la metodologia implementada, y se compara contra convencional, por que es el tipo de uso de suelo mas dañino.*
+  
+  $$\beta_j=estacion$$
+  
+  Cuando se esta en invierno, se observa que el nivel de actividad colinesterasa sube 32.817 unidades con respecto al promedio general de actividad colinesterasa. Mientras que cuando se esta en verano, el nivel de actividad colinesterasa baja en 32.817 unidades con respecto al promedio general. *Se cumple la hipotesis de investigacion.*
+  
+  
+  *Analisis de varianza para observar si hay un efecto del tipo de practica en el suelo y la estacion sobre la actividad colinesterasa en lombrices*
+  
+  $$H0:\alpha_i=0$$
+  
+```{r}
+anova(modsin)
+```
+  
+  Con una significancia del 5%, se rechaza la hipotesis nula de que no hay efecto del tipo de practica en el suelo sobre la actividad colinesterasa en lombrices. Se concluye que hay diferencias en la actividad colinesterasa en lombrices para cada tipo de practica que se da en el suelo independientemente de la estacion en la que se este (invierno o verano).
+  
+  
+  *Construccion de los contrastes.*
+  
+```{r}
+modsin$coefficients
+```
+  
+  Primer hipotesis `BPA-Bosque`
+  
+$$H0:\mu_{2.}=\mu_{1.}$$
+  
+  Segundo hipotesis `BPA-Convencional`
+  
+$$H0:\mu_{2.}=\mu_{3.}$$
+
+  Tercer hipotesis `Bosque-Convencional`
+  
+$$H0:\mu_{1.}=\mu_{3.}$$
+  
+  Cuarta hipotesis `Bosque-organico`
+  
+$$H0:\mu_{1.}=\mu_{4.}$$  
+
+  Quinta hipotesis `BPA-organico`
+  
+$$H0:\mu_{2.}=\mu_{4.}$$  
+
+  Sexta hipotesis `Organico-Convencional`
+  
+$$H0:\mu_{4.}=\mu_{3.}$$
+  
+  Comparaciones multiples (Tukey-Cramer) 
+  
+```{r}
+modt = aov(ChE ~ practica + estacion, colinesterasa)
+TukeyHSD(modt)
+```
+  
+  Usando la distribucion del rango estudentizado de Tukey, se rechaza la H0 de que la actividad colinesterasa en lombrices es igual entre los tipos de practica en el suelo `BPA-Convencional` y `Bosque-Convencional`, por lo que se haran intervalos de confianza inferiores unicamente para estas las diferencias de promedios entre `BPA-Convencional` y `Bosque-Convencional`.  
+  
+  
+  Vectores, contrastes e intervalo de confianza inferior de diferencias.
+  
+```{r}
+modsin$coefficients
+
+# Media marginal de Bosque
+v1 = c(1, 1, 0, 0, 0)
+
+# Media marginal de BPA
+v2 = c(1, 0, 1, 0, 0)
+
+# Media marginal de Convencional
+v3 = c(1, 0, 0, 1, 0)
+
+# Comparacion del promedio marginal de BPA contra el promedio convencional
+c1 = v2 - v3
+
+# Comparacion del promedio marginal de bosque contra el promedio marginal de convencional
+c2 = v1 - v3
+
+L1 = t(c1)%*%modsin$coef
+L2 = t(c2)%*%modsin$coef
+
+veccont = c(L1, L2)
+
+# Construccion del intervalo de confianza
+
+ee1 = sqrt(t(c1)%*%vcov(modsin)%*%c1)
+ee2 = sqrt(t(c2)%*%vcov(modsin)%*%c2)
+eevec = c(ee1, ee2)
+
+d = 2 # Numero de intervalos que quiero hacer (como son dos pruebas de hipotesis de diferencia de medias, entonces son 2 intervalos de confianza los que busco construir).
+df = anova(modsin)[3,1]
+t = qt(1-0.05/(2*d), df)
+ICI = veccont - t*eevec
+round(ICI, 3)
+```
+  
+  Segundo hipotesis `BPA-Convencional`
+
+  Tercer hipotesis `Bosque-Convencional`
+  
+  
+  Entre el tipo de practica de uso de suelo BPA y convencional, se espera que la diferencia verdadera en el nivel de actividad colinesterasa en lombrices sea tan pequeña como 110.024, mientras que entre el tipo de practica de uso de suelo bosque y convencional, se espera que la diferencia verdadera en el nivel de actividad colinesterasa en lombries sea tan pequeña como 76.936.
+  
+  *Comentar acerca de las diferencias verdaderas (delta=freylan dime por favooor) que se espera ver que caiga dentro del intervalo de confianza de diferencias de promedios*
+  
+  
+  
